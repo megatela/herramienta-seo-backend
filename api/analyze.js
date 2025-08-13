@@ -2,21 +2,17 @@ const { google } = require('googleapis');
 const axios = require('axios');
 
 module.exports = async (req, res) => {
-  // --- INICIO DEL BLOQUE DE PERMISOS CORS (NUEVO) ---
-  // Con esto le decimos al servidor: "Confío en las llamadas de este origen".
+  // --- BLOQUE DE PERMISOS CORS ---
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', 'https://www.techebooks.online');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With, Content-Type');
-
-  // Si el navegador envía una solicitud de "pre-vuelo" (OPTIONS), la aprobamos y terminamos.
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
-  // --- FIN DEL BLOQUE DE PERMISOS CORS ---
+  // --- FIN DEL BLOQUE ---
 
-  // A partir de aquí, el resto del código es el que ya teníamos.
   if (req.method !== 'POST') {
     return res.status(405).json({ message: 'Método no permitido. Usa POST.' });
   }
@@ -29,7 +25,8 @@ module.exports = async (req, res) => {
 
   try {
     const oauth2Client = new google.auth.OAuth2();
-    oauth2Clien.setCredentials({ access_token: accessToken });
+    // ¡¡¡AQUÍ ESTABA EL ERROR CORREGIDO!!!
+    oauth2Client.setCredentials({ access_token: accessToken });
 
     const webmasters = google.webmasters({ version: 'v3', auth: oauth2Client });
 
