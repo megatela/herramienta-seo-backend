@@ -1,71 +1,92 @@
-// Este código se ejecutará en un servidor, no en el navegador.
-
-// Importamos una herramienta llamada 'axios' que nos ayudará a hacer llamadas a otras APIs.
+const { google } = require('googleapis');
 const axios = require('axios');
 
-// Esta es la función principal. Se activará cada vez que nuestro frontend la llame.
 module.exports = async (req, res) => {
-  // Por seguridad, nos aseguramos de que la solicitud sea del tipo correcto (POST).
+  // --- INICIO DEL BLOQUE DE PERMISOS CORS (NUEVO) ---
+  // Con esto le decimos al servidor: "Confío en las llamadas de este origen".
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Origin', 'https://www.techebooks.online');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With, Content-Type');
+
+  // Si el navegador envía una solicitud de "pre-vuelo" (OPTIONS), la aprobamos y terminamos.
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+  // --- FIN DEL BLOQUE DE PERMISOS CORS ---
+
+  // A partir de aquí, el resto del código es el que ya teníamos.
   if (req.method !== 'POST') {
     return res.status(405).json({ message: 'Método no permitido. Usa POST.' });
   }
 
+  const { accessToken, siteUrl, query } = req.body;
+
+  if (!accessToken || !siteUrl || !query) {
+    return res.status(400).json({ message: 'Faltan parámetros: accessToken, siteUrl o query.' });
+  }
+
   try {
-    // --- PASO A: Recibimos los datos del frontend ---
-    // Nuestro frontend nos enviará los datos de las URLs en conflicto.
-    const { url1, title1, description1, url2, title2, description2 } = req.body;
+    const oauth2Client = new google.auth.OAuth2();
+    oauth2Clien.setCredentials({ access_token: accessToken });
 
-    // --- PASO B: Preparamos la instrucción para la IA ---
-    // Aquí le decimos a la IA quién es y qué tiene que hacer.
-    // ¡Este "prompt" es la clave de la magia!
-    const prompt = `
-      Eres un experto SEO de clase mundial, especializado en resolver canibalización de palabras clave.
-      Analiza la siguiente información de dos URLs que compiten y da una recomendación clara y accionable.
+    const webmasters = google.webmasters({ version: 'v3', auth: oauth2Client });
 
-      URL 1: ${url1}
-      Título 1: "${title1}"
-      Descripción 1: "${description1}"
-
-      URL 2: ${url2}
-      Título 2: "${title2}"
-      Descripción 2: "${description2}"
-
-      Basándote en esto, determina si la mejor acción es "FUSIONAR" (combinar el contenido) o "DIFERENCIAR" (optimizar cada una para una intención distinta).
-      Proporciona una justificación concisa.
-
-      Responde ÚNICAMENTE en formato JSON, así:
-      {
-        "accion": "TU_RESPUESTA",
-        "justificacion": "TU_EXPLICACION"
+    const gscResponse = await webmasters.searchanalytics.query({
+      siteUrl: siteUrl,
+      requestBody: {
+        dimensions: ['page'],
+        dimensionFilterGroups: [{
+          filters: [{
+            dimension: 'query',
+            operator: 'equals',
+            expression: query
+          }]
+        }],
+        rowLimit: 10
       }
+    });
+
+    const rows = gscResponse.data.rows || [];
+
+    if (rows.length < 2) {
+      return res.status(200).json({
+        accion: "NO_HAY_CONFLICTO",
+        justificacion: `Solo se encontró 1 URL (o ninguna) para la consulta "${query}". No hay canibalización que analizar.`
+      });
+    }
+
+    const url1 = rows[0].keys[0];
+    const url2 = rows[1].keys[0];
+
+    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+    const prompt = `
+      Eres un experto SEO de clase mundial. Analiza una canibalización de palabra clave.
+      La consulta de búsqueda es: "${query}"
+      La URL 1 que posiciona es: ${url1}
+      La URL 2 que también posiciona es: ${url2}
+      Basándote en las URLs, determina si la intención de búsqueda es la misma o diferente y recomienda "FUSIONAR" o "DIFERENCIAR".
+      Proporciona una justificación concisa.
+      Responde únicamente en formato JSON: {"accion": "TU_ACCION", "justificacion": "TU_EXPLICACION"}
     `;
 
-    // --- PASO C: Llamamos a la API de OpenRouter ---
-    const response = await axios.post(
-      'https://openrouter.ai/api/v1/chat/completions',
-      {
-        model: 'mistralai/mistral-7b-instruct', // Usamos un modelo bueno, rápido y barato.
-        messages: [{ role: 'user', content: prompt }],
-      },
-      {
-        headers: {
-          // Aquí usaremos la API Key de forma segura.
-          // Le decimos al código que la busque en las variables de entorno de Vercel.
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        },
-      }
+    const aiResponse = await axios.post('https://openrouter.ai/api/v1/chat/completions',
+      { model: 'mistralai/mistral-7b-instruct', messages: [{ role: 'user', content: prompt }] },
+      { headers: { 'Authorization': `Bearer ${openRouterApiKey}` } }
     );
-
-    // --- PASO D: Enviamos la respuesta de la IA de vuelta al frontend ---
-    const aiResultText = response.data.choices[0].message.content;
-    const aiResultJson = JSON.parse(aiResultText);
-
-    // Enviamos una respuesta exitosa (código 200) con el análisis de la IA.
-    res.status(200).json(aiResultJson);
+    
+    const aiResultJson = JSON.parse(aiResponse.data.choices[0].message.content);
+    
+    res.status(200).json({
+        ...aiResultJson,
+        urlConflicto1: url1,
+        urlConflicto2: url2,
+        queryAnalizada: query
+    });
 
   } catch (error) {
-    // Si algo sale mal, lo registramos y enviamos un error.
-    console.error('Error en el backend:', error);
-    res.status(500).json({ message: 'Error en el servidor.' });
+    console.error('Error en analyze.js:', error.response ? error.response.data : error.message);
+    res.status(500).json({ message: 'Ha ocurrido un error en el servidor durante el análisis.' });
   }
 };
