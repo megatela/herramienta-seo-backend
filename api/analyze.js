@@ -1,3 +1,4 @@
+// ¡LÍNEAS QUE FALTABAN!
 const { google } = require('googleapis');
 const axios = require('axios');
 
@@ -25,7 +26,7 @@ module.exports = async (req, res) => {
 
   try {
     const oauth2Client = new google.auth.OAuth2();
-    // ¡¡¡AQUÍ ESTABA EL ERROR CORREGIDO!!!
+    // ¡AQUÍ ESTABA EL ERROR CORREGIDO!
     oauth2Client.setCredentials({ access_token: accessToken });
 
     const webmasters = google.webmasters({ version: 'v3', auth: oauth2Client });
@@ -83,7 +84,8 @@ module.exports = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error en analyze.js:', error.response ? error.response.data : error.message);
+    // Para depurar mejor, vamos a imprimir el error completo en el log del servidor
+    console.error('Error detallado en analyze.js:', error);
     res.status(500).json({ message: 'Ha ocurrido un error en el servidor durante el análisis.' });
   }
 };
