@@ -1,4 +1,3 @@
-// ¡LÍNEAS QUE FALTABAN!
 const { google } = require('googleapis');
 const axios = require('axios');
 
@@ -26,14 +25,23 @@ module.exports = async (req, res) => {
 
   try {
     const oauth2Client = new google.auth.OAuth2();
-    // ¡AQUÍ ESTABA EL ERROR CORREGIDO!
     oauth2Client.setCredentials({ access_token: accessToken });
 
     const webmasters = google.webmasters({ version: 'v3', auth: oauth2Client });
 
+    // --- ¡NUEVO! CÁLCULO DE FECHAS ---
+    // Calculamos el rango de fechas para los últimos 90 días.
+    const endDate = new Date().toISOString().split('T')[0];
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 90);
+    const startDateFormatted = startDate.toISOString().split('T')[0];
+
+    // --- CONSULTA A GSC (CORREGIDA CON FECHAS) ---
     const gscResponse = await webmasters.searchanalytics.query({
       siteUrl: siteUrl,
       requestBody: {
+        startDate: startDateFormatted, // Fecha de inicio añadida
+        endDate: endDate,             // Fecha de fin añadida
         dimensions: ['page'],
         dimensionFilterGroups: [{
           filters: [{
@@ -51,7 +59,7 @@ module.exports = async (req, res) => {
     if (rows.length < 2) {
       return res.status(200).json({
         accion: "NO_HAY_CONFLICTO",
-        justificacion: `Solo se encontró 1 URL (o ninguna) para la consulta "${query}". No hay canibalización que analizar.`
+        justificacion: `Solo se encontró 1 URL (o ninguna) para la consulta "${query}" en los últimos 90 días. No hay canibalización que analizar.`
       });
     }
 
@@ -84,7 +92,6 @@ module.exports = async (req, res) => {
     });
 
   } catch (error) {
-    // Para depurar mejor, vamos a imprimir el error completo en el log del servidor
     console.error('Error detallado en analyze.js:', error);
     res.status(500).json({ message: 'Ha ocurrido un error en el servidor durante el análisis.' });
   }
